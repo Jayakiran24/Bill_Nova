@@ -1,0 +1,20 @@
+[
+ "GFR910FSS/GFR910UCSS: the PDF puts two model codes in one row. Loaded as a single item - split it if they are priced differently.",
+ "FOW200: printed MRP Rs 55,000 is BELOW the dealer price Rs 59,000. Loaded as printed - check with Rockwell.",
+ "PURE BLU/BLACK: no MRP printed. Sale price left blank for staff to enter; dealer price loaded.",
+ "RCSH4L3: 4 Level 3 FT - Hot is not refrigerating equipment, so no 8418 code was assigned. Ask the CA for the right HSN before billing it.",
+ "RCSH4L3: no MRP printed. Sale price left blank for staff to enter; dealer price loaded.",
+ "RCSH4L4: 4 Level 4 FT - Hot is not refrigerating equipment, so no 8418 code was assigned. Ask the CA for the right HSN before billing it.",
+ "RCSH4L4: no MRP printed. Sale price left blank for staff to enter; dealer price loaded.",
+ "RCSH4L5: 4 Level 5 FT - Hot is not refrigerating equipment, so no 8418 code was assigned. Ask the CA for the right HSN before billing it.",
+ "RCSH4L5: no MRP printed. Sale price left blank for staff to enter; dealer price loaded.",
+ "RCSA4L3: 4 Level 3 FT - Normal is not refrigerating equipment, so no 8418 code was assigned. Ask the CA for the right HSN before billing it.",
+ "RCSA4L3: no MRP printed. Sale price left blank for staff to enter; dealer price loaded.",
+ "RCSA4L4: 4 Level 4 FT - Normal is not refrigerating equipment, so no 8418 code was assigned. Ask the CA for the right HSN before billing it.",
+ "RCSA4L4: no MRP printed. Sale price left blank for staff to enter; dealer price loaded.",
+ "RCSA4L5: 4 Level 5 FT - Normal is not refrigerating equipment, so no 8418 code was assigned. Ask the CA for the right HSN before billing it.",
+ "RCSA4L5: no MRP printed. Sale price left blank for staff to enter; dealer price loaded.",
+ "RMC30S: description says '15 LTR' but the model is the 30 litre unit. Loaded as printed.",
+ "RB15600: a lithium battery, not refrigeration. Provisionally HSN 85076000 at 18% - confirm with the CA.",
+ "PB15600: a lithium battery, not refrigeration. Provisionally HSN 85076000 at 18% - confirm with the CA."
+]
