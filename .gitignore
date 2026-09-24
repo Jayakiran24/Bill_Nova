@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+build/
+dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local database files
+*.db
+*.db-wal
+*.db-shm
+
+# Project-specific exclusions
+.DS_Store
+next-env.d.ts
+backups/
+
+# TypeScript build cache
+*.tsbuildinfo
