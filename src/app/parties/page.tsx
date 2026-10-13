@@ -19,8 +19,8 @@ export default async function PartiesPage({
   if (!user) redirect('/login');
 
   const sp = await searchParams;
-  const business = getBusiness(user.business_id);
-  const rows = listParties(user.business_id, sp.q || '');
+  const business = await getBusiness(user.business_id);
+  const rows = await listParties(user.business_id, sp.q || '');
 
   const receivable = rows.filter((r) => r.balance > 0).reduce((a, r) => a + r.balance, 0);
   const payable = rows.filter((r) => r.balance < 0).reduce((a, r) => a - r.balance, 0);

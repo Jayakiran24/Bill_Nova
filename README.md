@@ -81,6 +81,21 @@ The first run creates the database and seeds a demo shop.
 
 **Change both passwords in Settings before anyone bills a real customer.**
 
+### Deploying on Vercel (Turso)
+
+Vercel has no persistent disk, so production uses a Turso (libSQL) database. The schema
+and demo seed are created automatically on the first request.
+
+```bash
+turso db create billnova
+turso db show billnova --url          # -> TURSO_DATABASE_URL
+turso db tokens create billnova       # -> TURSO_AUTH_TOKEN
+```
+
+Add both as environment variables in the Vercel project (Settings → Environment
+Variables), then redeploy. With neither variable set (plain `npm run dev` on your
+machine), the app uses a local SQLite file at `data/billnova.db` as before.
+
 ### Using it from the phone on the shop wi-fi
 
 Start it with `npm start`, find the PC's local IP (`ipconfig` on Windows,

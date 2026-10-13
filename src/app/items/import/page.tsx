@@ -11,7 +11,7 @@ export default async function ImportPage() {
   const user = await currentUser();
   if (!user) redirect('/login');
 
-  const business = getBusiness(user.business_id);
+  const business = await getBusiness(user.business_id);
 
   if (user.role !== 'owner') {
     return (
@@ -22,7 +22,7 @@ export default async function ImportPage() {
     );
   }
 
-  const brands = listBrands(user.business_id).map((b) => b.brand);
+  const brands = (await listBrands(user.business_id)).map((b) => b.brand);
 
   return (
     <Shell user={user} businessName={business.name}>

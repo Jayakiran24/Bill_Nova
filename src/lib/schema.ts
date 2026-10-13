@@ -1,4 +1,5 @@
--- Bill Nova schema
+// Generated from schema.sql so the schema ships inside the bundle (no runtime file read).
+export const SCHEMA = `-- Bill Nova schema
 -- All money is stored as INTEGER paise. All quantities as INTEGER thousandths.
 -- All GST rates as INTEGER basis points (1800 = 18%). Never a floating point number.
 
@@ -241,3 +242,4 @@ SELECT
     + COALESCE((SELECT SUM(qty_in) - SUM(qty_out) FROM stock_ledger s WHERE s.item_id = i.id), 0)
                 AS qty
 FROM item i;
+`;

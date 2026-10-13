@@ -27,12 +27,12 @@ export default async function PartyPage({
   if (!user) redirect("/login");
 
   const { id } = await params;
-  const party = getParty(Number(id), user.business_id);
+  const party = await getParty(Number(id), user.business_id);
   if (!party) notFound();
 
-  const business = getBusiness(user.business_id);
-  const ledger = partyLedger(party.id, user.business_id);
-  const open = openBillsForParty(party.id, user.business_id);
+  const business = await getBusiness(user.business_id);
+  const ledger = await partyLedger(party.id, user.business_id);
+  const open = await openBillsForParty(party.id, user.business_id);
 
   let running = party.opening_balance;
   const rows = ledger.map((l) => {

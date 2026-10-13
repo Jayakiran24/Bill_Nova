@@ -17,8 +17,8 @@ export default async function InvoicesPage({
 
   const sp = await searchParams;
   const type = sp.type || 'sales_invoice';
-  const business = getBusiness(user.business_id);
-  const rows = listVouchers(user.business_id, type, {
+  const business = await getBusiness(user.business_id);
+  const rows = await listVouchers(user.business_id, type, {
     search: sp.q, unpaidOnly: sp.unpaid === '1',
   });
 

@@ -11,9 +11,9 @@ export default async function Home() {
   const user = await currentUser();
   if (!user) redirect('/login');
 
-  const business = getBusiness(user.business_id);
-  const d = dashboard(user.business_id);
-  const low = lowStockItems(user.business_id).slice(0, 5);
+  const business = await getBusiness(user.business_id);
+  const d = await dashboard(user.business_id);
+  const low = (await lowStockItems(user.business_id)).slice(0, 5);
 
   return (
     <Shell user={user} businessName={business.name}>

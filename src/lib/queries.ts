@@ -105,20 +105,20 @@ export interface VoucherLine {
   line_total: number;
 }
 
-export function getBusiness(id = 1): Business {
-  return get<Business>("SELECT * FROM business WHERE id = ?", id)!;
+export async function getBusiness(id = 1): Promise<Business> {
+  return (await get<Business>("SELECT * FROM business WHERE id = ?", id))!;
 }
 
-export function listParties(
+export async function listParties(
   businessId: number,
   search = "",
   type?: string,
-): (Party & { balance: number })[] {
+): Promise<(Party & { balance: number })[]> {
   const like = `%${search}%`;
   const typeClause = type ? " AND (p.type = ? OR p.type = 'both')" : "";
   const params: unknown[] = [businessId, like, like];
   if (type) params.push(type);
-  return all(
+  return await all(
     `SELECT p.*, COALESCE(b.balance, 0) AS balance
        FROM party p LEFT JOIN party_balance b ON b.party_id = p.id
       WHERE p.business_id = ? AND p.is_active = 1
@@ -128,11 +128,11 @@ export function listParties(
   );
 }
 
-export function getParty(
+export async function getParty(
   id: number,
   businessId: number,
-): (Party & { balance: number }) | undefined {
-  return get(
+): Promise<(Party & { balance: number }) | undefined> {
+  return await get(
     `SELECT p.*, COALESCE(b.balance, 0) AS balance
        FROM party p LEFT JOIN party_balance b ON b.party_id = p.id
       WHERE p.id = ? AND p.business_id = ?`,
@@ -141,8 +141,8 @@ export function getParty(
   );
 }
 
-export function partyLedger(partyId: number, businessId: number) {
-  return all<{
+export async function partyLedger(partyId: number, businessId: number) {
+  return await all<{
     date: string;
     source_type: string;
     source_id: number;
@@ -157,12 +157,12 @@ export function partyLedger(partyId: number, businessId: number) {
   );
 }
 
-export function listItems(
+export async function listItems(
   businessId: number,
   search = "",
   brand = "",
   category = "",
-): (Item & { stock: number })[] {
+): Promise<(Item & { stock: number })[]> {
   const like = `%${search}%`;
   const clauses = [
     "i.business_id = ?",
@@ -178,7 +178,7 @@ export function listItems(
     clauses.push("i.category = ?");
     params.push(category);
   }
-  return all(
+  return await all(
     `SELECT i.*, COALESCE(s.qty, 0) AS stock
        FROM item i LEFT JOIN stock_on_hand s ON s.item_id = i.id
       WHERE ${clauses.join(" AND ")}
@@ -188,8 +188,8 @@ export function listItems(
 }
 
 /** Distinct brands, with how many items each has. Drives the Items filter bar. */
-export function listBrands(businessId: number) {
-  return all<{ brand: string; n: number }>(
+export async function listBrands(businessId: number) {
+  return await all<{ brand: string; n: number }>(
     `SELECT IFNULL(brand,'') AS brand, COUNT(*) AS n FROM item
       WHERE business_id = ? AND is_active = 1 AND IFNULL(brand,'') <> ''
       GROUP BY brand ORDER BY brand`,
@@ -198,7 +198,7 @@ export function listBrands(businessId: number) {
 }
 
 /** Categories, optionally narrowed to one brand. */
-export function listCategories(businessId: number, brand = "") {
+export async function listCategories(businessId: number, brand = "") {
   const clauses = [
     "business_id = ?",
     "is_active = 1",
@@ -209,18 +209,18 @@ export function listCategories(businessId: number, brand = "") {
     clauses.push("brand = ?");
     params.push(brand);
   }
-  return all<{ category: string; n: number }>(
+  return await all<{ category: string; n: number }>(
     `SELECT category, COUNT(*) AS n FROM item
       WHERE ${clauses.join(" AND ")} GROUP BY category ORDER BY category`,
     ...params,
   );
 }
 
-export function getItem(
+export async function getItem(
   id: number,
   businessId: number,
-): (Item & { stock: number }) | undefined {
-  return get(
+): Promise<(Item & { stock: number }) | undefined> {
+  return await get(
     `SELECT i.*, COALESCE(s.qty, 0) AS stock
        FROM item i LEFT JOIN stock_on_hand s ON s.item_id = i.id
       WHERE i.id = ? AND i.business_id = ?`,
@@ -229,8 +229,8 @@ export function getItem(
   );
 }
 
-export function lowStockItems(businessId: number) {
-  return all<Item & { stock: number }>(
+export async function lowStockItems(businessId: number) {
+  return await all<Item & { stock: number }>(
     `SELECT i.*, COALESCE(s.qty, 0) AS stock
        FROM item i LEFT JOIN stock_on_hand s ON s.item_id = i.id
       WHERE i.business_id = ? AND i.is_active = 1 AND i.is_service = 0
@@ -240,7 +240,7 @@ export function lowStockItems(businessId: number) {
   );
 }
 
-export function listVouchers(
+export async function listVouchers(
   businessId: number,
   type: string,
   opts: {
@@ -267,7 +267,7 @@ export function listVouchers(
   // due is computed in an inner select, then filtered outside it: a HAVING with no
   // GROUP BY would collapse every row into one.
   const outerWhere = opts.unpaidOnly ? "WHERE due > 0" : "";
-  return all<Voucher & { paid: number; due: number }>(
+  return await all<Voucher & { paid: number; due: number }>(
     `SELECT * FROM (
        SELECT v.*,
               COALESCE((SELECT SUM(a.amount) FROM payment_allocation a
@@ -286,22 +286,22 @@ export function listVouchers(
   );
 }
 
-export function getVoucher(
+export async function getVoucher(
   id: number,
   businessId: number,
-): Voucher | undefined {
-  return get<Voucher>(
+): Promise<Voucher | undefined> {
+  return await get<Voucher>(
     "SELECT * FROM voucher WHERE id = ? AND business_id = ?",
     id,
     businessId,
   );
 }
 
-export function voucherLines(
+export async function voucherLines(
   voucherId: number,
   businessId: number,
-): VoucherLine[] {
-  return all<VoucherLine>(
+): Promise<VoucherLine[]> {
+  return await all<VoucherLine>(
     `SELECT l.* FROM voucher_line l JOIN voucher v ON v.id = l.voucher_id
       WHERE l.voucher_id = ? AND v.business_id = ? ORDER BY l.line_no`,
     voucherId,
@@ -309,8 +309,8 @@ export function voucherLines(
   );
 }
 
-export function voucherPaid(voucherId: number, businessId: number): number {
-  const r = get<{ n: number }>(
+export async function voucherPaid(voucherId: number, businessId: number): Promise<number> {
+  const r = await get<{ n: number }>(
     `SELECT COALESCE(SUM(a.amount),0) AS n FROM payment_allocation a
        JOIN payment p ON p.id = a.payment_id
       JOIN voucher v ON v.id = a.voucher_id
@@ -321,8 +321,8 @@ export function voucherPaid(voucherId: number, businessId: number): number {
   return r?.n ?? 0;
 }
 
-export function openBillsForParty(partyId: number, businessId: number) {
-  return all<{
+export async function openBillsForParty(partyId: number, businessId: number) {
+  return await all<{
     id: number;
     number: string;
     date: string;
@@ -345,7 +345,7 @@ export function openBillsForParty(partyId: number, businessId: number) {
   );
 }
 
-export function listPayments(businessId: number, from?: string, to?: string) {
+export async function listPayments(businessId: number, from?: string, to?: string) {
   const clauses = ["p.business_id = ?"];
   const params: unknown[] = [businessId];
   if (from) {
@@ -356,7 +356,7 @@ export function listPayments(businessId: number, from?: string, to?: string) {
     clauses.push("p.date <= ?");
     params.push(to);
   }
-  return all<{
+  return await all<{
     id: number;
     type: string;
     number: string;
@@ -374,55 +374,55 @@ export function listPayments(businessId: number, from?: string, to?: string) {
 
 /* ---------------------------- dashboard ---------------------------- */
 
-export function dashboard(businessId: number) {
+export async function dashboard(businessId: number) {
   const today = todayISO();
   const monthStart = today.slice(0, 8) + "01";
 
-  const todaySales = get<{ n: number; c: number }>(
+  const todaySales = (await get<{ n: number; c: number }>(
     `SELECT COALESCE(SUM(grand_total),0) AS n, COUNT(*) AS c FROM voucher
       WHERE business_id = ? AND type = 'sales_invoice' AND status = 'final' AND date = ?`,
     businessId,
     today,
-  )!;
+  ))!;
 
-  const monthSales = get<{ n: number; c: number }>(
+  const monthSales = (await get<{ n: number; c: number }>(
     `SELECT COALESCE(SUM(grand_total),0) AS n, COUNT(*) AS c FROM voucher
       WHERE business_id = ? AND type = 'sales_invoice' AND status = 'final' AND date >= ?`,
     businessId,
     monthStart,
-  )!;
+  ))!;
 
-  const todayCollected = get<{ n: number }>(
+  const todayCollected = (await get<{ n: number }>(
     `SELECT COALESCE(SUM(amount),0) AS n FROM payment
       WHERE business_id = ? AND type = 'in' AND status = 'final' AND date = ?`,
     businessId,
     today,
-  )!;
+  ))!;
 
-  const receivable = get<{ n: number }>(
+  const receivable = (await get<{ n: number }>(
     `SELECT COALESCE(SUM(balance),0) AS n FROM party_balance WHERE business_id = ? AND balance > 0`,
     businessId,
-  )!;
+  ))!;
 
-  const payable = get<{ n: number }>(
+  const payable = (await get<{ n: number }>(
     `SELECT COALESCE(-SUM(balance),0) AS n FROM party_balance WHERE business_id = ? AND balance < 0`,
     businessId,
-  )!;
+  ))!;
 
-  const lowStock = get<{ n: number }>(
+  const lowStock = (await get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM item i LEFT JOIN stock_on_hand s ON s.item_id = i.id
       WHERE i.business_id = ? AND i.is_active = 1 AND i.is_service = 0
         AND i.low_stock_level > 0 AND COALESCE(s.qty,0) <= i.low_stock_level`,
     businessId,
-  )!;
+  ))!;
 
-  const recent = all<Voucher>(
+  const recent = await all<Voucher>(
     `SELECT * FROM voucher WHERE business_id = ? AND type = 'sales_invoice'
       ORDER BY id DESC LIMIT 8`,
     businessId,
   );
 
-  const topDebtors = all<{ party_id: number; name: string; balance: number }>(
+  const topDebtors = await all<{ party_id: number; name: string; balance: number }>(
     `SELECT party_id, name, balance FROM party_balance
       WHERE business_id = ? AND balance > 0 ORDER BY balance DESC LIMIT 5`,
     businessId,
@@ -443,8 +443,8 @@ export function dashboard(businessId: number) {
 
 /* ----------------------------- reports ----------------------------- */
 
-export function saleRegister(businessId: number, from: string, to: string) {
-  return all<Voucher>(
+export async function saleRegister(businessId: number, from: string, to: string) {
+  return await all<Voucher>(
     `SELECT * FROM voucher WHERE business_id = ? AND type = 'sales_invoice'
         AND date BETWEEN ? AND ? ORDER BY date, number`,
     businessId,
@@ -453,8 +453,8 @@ export function saleRegister(businessId: number, from: string, to: string) {
   );
 }
 
-export function gstSummary(businessId: number, from: string, to: string) {
-  return all<{
+export async function gstSummary(businessId: number, from: string, to: string) {
+  return await all<{
     hsn_sac: string;
     gst_rate_bp: number;
     qty: number;
@@ -477,16 +477,16 @@ export function gstSummary(businessId: number, from: string, to: string) {
   );
 }
 
-export function outstandingReport(businessId: number) {
-  return all<{ party_id: number; name: string; balance: number }>(
+export async function outstandingReport(businessId: number) {
+  return await all<{ party_id: number; name: string; balance: number }>(
     `SELECT party_id, name, balance FROM party_balance
       WHERE business_id = ? AND balance <> 0 ORDER BY balance DESC`,
     businessId,
   );
 }
 
-export function stockReport(businessId: number) {
-  return all<{
+export async function stockReport(businessId: number) {
+  return await all<{
     id: number;
     name: string;
     unit: string;

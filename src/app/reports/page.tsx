@@ -17,7 +17,7 @@ export default async function ReportsPage({
   if (!user) redirect('/login');
 
   const sp = await searchParams;
-  const business = getBusiness(user.business_id);
+  const business = await getBusiness(user.business_id);
   const today = todayISO();
   const from = sp.from || today.slice(0, 8) + '01';
   const to = sp.to || today;
@@ -68,8 +68,8 @@ export default async function ReportsPage({
   );
 }
 
-function SaleRegister({ businessId, from, to }: { businessId: number; from: string; to: string }) {
-  const rows = saleRegister(businessId, from, to);
+async function SaleRegister({ businessId, from, to }: { businessId: number; from: string; to: string }) {
+  const rows = await saleRegister(businessId, from, to);
   const live = rows.filter((v) => v.status === 'final');
   const total = live.reduce((a, v) => a + v.grand_total, 0);
   const taxable = live.reduce((a, v) => a + v.taxable_value, 0);
@@ -117,8 +117,8 @@ function SaleRegister({ businessId, from, to }: { businessId: number; from: stri
   );
 }
 
-function GstSummary({ businessId, from, to }: { businessId: number; from: string; to: string }) {
-  const rows = gstSummary(businessId, from, to);
+async function GstSummary({ businessId, from, to }: { businessId: number; from: string; to: string }) {
+  const rows = await gstSummary(businessId, from, to);
   const t = rows.reduce((a, r) => ({
     taxable: a.taxable + r.taxable_value, cgst: a.cgst + r.cgst,
     sgst: a.sgst + r.sgst, igst: a.igst + r.igst,
@@ -164,8 +164,8 @@ function GstSummary({ businessId, from, to }: { businessId: number; from: string
   );
 }
 
-function Outstanding({ businessId }: { businessId: number }) {
-  const rows = outstandingReport(businessId);
+async function Outstanding({ businessId }: { businessId: number }) {
+  const rows = await outstandingReport(businessId);
   return (
     <div className="card">
       <div className="card-head">Who owes what, largest first</div>
@@ -191,8 +191,8 @@ function Outstanding({ businessId }: { businessId: number }) {
   );
 }
 
-function Stock({ businessId, isOwner }: { businessId: number; isOwner: boolean }) {
-  const rows = stockReport(businessId);
+async function Stock({ businessId, isOwner }: { businessId: number; isOwner: boolean }) {
+  const rows = await stockReport(businessId);
   const value = rows.reduce((a, r) => a + Math.round((r.stock * r.purchase_price) / 1000), 0);
   return (
     <>

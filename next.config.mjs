@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // node:sqlite is a Node built-in; keep it out of the bundler's way.
-  serverExternalPackages: [],
+  // libSQL ships a native binding; keep it out of the bundler.
+  serverExternalPackages: ["@libsql/client", "libsql"],
   eslint: { ignoreDuringBuilds: true },
 };
 

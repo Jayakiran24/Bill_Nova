@@ -17,9 +17,9 @@ export default async function PaymentsPage({
   const user = await currentUser();
   if (!user) redirect('/login');
 
-  const business = getBusiness(user.business_id);
-  const rows = listPayments(user.business_id);
-  const parties = listParties(user.business_id);
+  const business = await getBusiness(user.business_id);
+  const rows = await listPayments(user.business_id);
+  const parties = await listParties(user.business_id);
 
   const inTotal = rows.filter((r) => r.type === 'in' && r.status === 'final').reduce((a, r) => a + r.amount, 0);
   const outTotal = rows.filter((r) => r.type === 'out' && r.status === 'final').reduce((a, r) => a + r.amount, 0);

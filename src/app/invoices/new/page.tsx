@@ -23,13 +23,13 @@ export default async function NewInvoicePage({
       : "sales_invoice"
   ) as "sales_invoice" | "estimate" | "purchase_bill";
 
-  const business = getBusiness(user.business_id);
-  const parties = listParties(
+  const business = await getBusiness(user.business_id);
+  const parties = await listParties(
     user.business_id,
     "",
     type === "purchase_bill" ? "supplier" : "customer",
   );
-  const items = listItems(user.business_id);
+  const items = await listItems(user.business_id);
 
   return (
     <Shell user={user} businessName={business.name} wide>

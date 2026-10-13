@@ -15,7 +15,7 @@ const COOKIE = "billnova_session";
 export async function createSession(userId: number): Promise<string> {
   const id = randomBytes(24).toString("hex");
   const expires = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString();
-  run(
+  await run(
     "INSERT INTO session (id, user_id, expires_at) VALUES (?,?,?)",
     id,
     userId,
@@ -35,7 +35,7 @@ export async function createSession(userId: number): Promise<string> {
 export async function destroySession() {
   const jar = await cookies();
   const id = jar.get(COOKIE)?.value;
-  if (id) run("DELETE FROM session WHERE id = ?", id);
+  if (id) await run("DELETE FROM session WHERE id = ?", id);
   jar.delete(COOKIE);
 }
 
@@ -44,7 +44,7 @@ export async function currentUser(): Promise<SessionUser | null> {
   const id = jar.get(COOKIE)?.value;
   if (!id) return null;
 
-  const row = get<SessionUser & { expires_at: string }>(
+  const row = await get<SessionUser & { expires_at: string }>(
     `SELECT u.id, u.business_id, u.name, u.phone, u.role, s.expires_at
        FROM session s JOIN app_user u ON u.id = s.user_id
       WHERE s.id = ? AND u.is_active = 1`,
@@ -52,7 +52,7 @@ export async function currentUser(): Promise<SessionUser | null> {
   );
   if (!row) return null;
   if (new Date(row.expires_at) < new Date()) {
-    run("DELETE FROM session WHERE id = ?", id);
+    await run("DELETE FROM session WHERE id = ?", id);
     return null;
   }
   return {
@@ -71,12 +71,12 @@ export async function requireUser(): Promise<SessionUser> {
   return u;
 }
 
-export function purgeExpiredSessions() {
-  run("DELETE FROM session WHERE expires_at < datetime('now')");
+export async function purgeExpiredSessions() {
+  await run("DELETE FROM session WHERE expires_at < datetime('now')");
 }
 
-export function listUsers(businessId: number) {
-  return all<{
+export async function listUsers(businessId: number) {
+  return await all<{
     id: number;
     name: string;
     phone: string;

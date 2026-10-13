@@ -18,13 +18,13 @@ export default async function SettingsPage({
   const user = await currentUser();
   if (!user) redirect('/login');
 
-  const b = getBusiness(user.business_id);
+  const b = await getBusiness(user.business_id);
   const isOwner = user.role === 'owner';
-  const series = all<{ id: number; voucher_type: string; financial_year: string; prefix: string; last_number: number }>(
+  const series = await all<{ id: number; voucher_type: string; financial_year: string; prefix: string; last_number: number }>(
     'SELECT * FROM number_series WHERE business_id = ? ORDER BY financial_year DESC, voucher_type',
     user.business_id,
   );
-  const users = listUsers(user.business_id);
+  const users = await listUsers(user.business_id);
 
   if (!isOwner) {
     return (
@@ -169,11 +169,10 @@ export default async function SettingsPage({
         <div className="card-head">Backups</div>
         <div className="card-body">
           <p className="dim" style={{ marginTop: 0, fontSize: 14 }}>
-            All data lives in one file: <code>data/billnova.db</code>. Copy it somewhere safe every day.
-            A backup you have never restored is not a backup — once a month, copy the file
-            into a fresh folder, start the app against it, and check that last month&rsquo;s bills open.
+            All data lives in your Turso database. Download a full JSON export now and then and keep it
+            somewhere safe, as an extra copy outside Turso.
           </p>
-          <a className="btn" href="/api/backup">Download database backup</a>
+          <a className="btn" href="/api/backup">Download backup (JSON)</a>
         </div>
       </div>
     </Shell>

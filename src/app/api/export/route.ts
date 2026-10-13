@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
         "Status",
       ],
     ];
-    for (const v of saleRegister(user.business_id, from, to)) {
+    for (const v of await saleRegister(user.business_id, from, to)) {
       rows.push([
         v.number,
         v.date,
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     rows = [
       ["HSN/SAC", "Rate", "Quantity", "Taxable value", "CGST", "SGST", "IGST"],
     ];
-    for (const g of gstSummary(user.business_id, from, to)) {
+    for (const g of await gstSummary(user.business_id, from, to)) {
       rows.push([
         g.hsn_sac,
         bpToPercentLabel(g.gst_rate_bp),
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
   } else if (r === "outstanding") {
     name = `outstanding-${today}`;
     rows = [["Party", "Balance", "Direction"]];
-    for (const p of outstandingReport(user.business_id)) {
+    for (const p of await outstandingReport(user.business_id)) {
       rows.push([
         p.name,
         toRupees(Math.abs(p.balance)),
@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
         "Stock value at cost",
       ],
     ];
-    for (const i of stockReport(user.business_id)) {
+    for (const i of await stockReport(user.business_id)) {
       rows.push([
         i.name,
         i.hsn_sac,

@@ -72,7 +72,7 @@ export async function loginAction(_prev: unknown, formData: FormData) {
   const password = String(formData.get("password") || "");
   if (!phone || !password) return { error: "Enter phone number and password." };
 
-  const user = get<{ id: number; password_hash: string; is_active: number }>(
+  const user = await get<{ id: number; password_hash: string; is_active: number }>(
     "SELECT id, password_hash, is_active FROM app_user WHERE phone = ?",
     phone,
   );
@@ -107,9 +107,9 @@ export async function saveVoucher(input: SaveVoucherInput) {
     return { ok: false as const, error: "Unsupported document type." };
   }
 
-  const business = getBusiness(user.business_id);
+  const business = await getBusiness(user.business_id);
 
-  const party = get<{
+  const party = await get<{
     id: number;
     name: string;
     type: string;
@@ -191,10 +191,10 @@ export async function saveVoucher(input: SaveVoucherInput) {
   const totals = computeTotals(computed);
 
   try {
-    const result = tx(() => {
+    const result = await tx(async () => {
       for (const c of computed) {
         if (!c.src.itemId) continue;
-        const item = get<{
+        const item = await get<{
           id: number;
           name: string;
           is_service: number;
@@ -219,14 +219,14 @@ export async function saveVoucher(input: SaveVoucherInput) {
         }
       }
 
-      const number = nextNumber(
+      const number = await nextNumber(
         user.business_id,
         input.type,
         fy,
         PREFIX[input.type] + fy.slice(2) + "/",
       );
 
-      run(
+      const voucherId = (await run(
         `INSERT INTO voucher (business_id, type, number, financial_year, date, party_id, party_name,
            party_gstin, party_address, place_of_supply_code, is_igst, taxable_value, discount_total,
            cgst, sgst, igst, round_off, grand_total, status, notes, transporter, vehicle_no, created_by)
@@ -254,16 +254,12 @@ export async function saveVoucher(input: SaveVoucherInput) {
         input.transporter || null,
         input.vehicleNo || null,
         user.id,
-      );
-
-      const voucherId = Number(
-        get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id,
-      );
+      )).lastInsertRowid;
 
       let lineNo = 0;
       for (const c of computed) {
         lineNo += 1;
-        run(
+        await run(
           `INSERT INTO voucher_line (voucher_id, line_no, item_id, description, sku, hsn_sac, unit, qty, rate,
              discount_amt, taxable_value, gst_rate_bp, cgst, sgst, igst, line_total)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -290,7 +286,7 @@ export async function saveVoucher(input: SaveVoucherInput) {
       if (input.type !== "estimate") {
         const isSale = input.type === "sales_invoice";
 
-        run(
+        await run(
           `INSERT INTO party_ledger (business_id, party_id, date, source_type, source_id, narration, debit, credit)
            VALUES (?,?,?,?,?,?,?,?)`,
           user.business_id,
@@ -305,13 +301,13 @@ export async function saveVoucher(input: SaveVoucherInput) {
 
         for (const c of computed) {
           if (!c.src.itemId) continue;
-          const item = get<{ is_service: number }>(
+          const item = await get<{ is_service: number }>(
             "SELECT is_service FROM item WHERE id = ? AND business_id = ?",
             c.src.itemId,
             user.business_id,
           );
           if (item?.is_service) continue;
-          run(
+          await run(
             `INSERT INTO stock_ledger (business_id, item_id, date, source_type, source_id, narration, qty_in, qty_out, rate)
              VALUES (?,?,?,?,?,?,?,?,?)`,
             user.business_id,
@@ -329,13 +325,13 @@ export async function saveVoucher(input: SaveVoucherInput) {
         // Money handed over at the counter, recorded and allocated in the same breath.
         const paidNow = toPaise(input.paymentNow || "0");
         if (paidNow > 0) {
-          const payNo = nextNumber(
+          const payNo = await nextNumber(
             user.business_id,
             isSale ? "receipt" : "payment",
             fy,
             (isSale ? "RCP/" : "PAY/") + fy.slice(2) + "/",
           );
-          run(
+          const paymentId = (await run(
             `INSERT INTO payment (business_id, type, number, date, party_id, party_name, mode, amount, reference, created_by)
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
             user.business_id,
@@ -348,17 +344,14 @@ export async function saveVoucher(input: SaveVoucherInput) {
             paidNow,
             `Against ${number}`,
             user.id,
-          );
-          const paymentId = Number(
-            get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id,
-          );
-          run(
+          )).lastInsertRowid;
+          await run(
             "INSERT INTO payment_allocation (payment_id, voucher_id, amount) VALUES (?,?,?)",
             paymentId,
             voucherId,
             Math.min(paidNow, totals.grandTotal),
           );
-          run(
+          await run(
             `INSERT INTO party_ledger (business_id, party_id, date, source_type, source_id, narration, debit, credit)
              VALUES (?,?,?,?,?,?,?,?)`,
             user.business_id,
@@ -373,7 +366,7 @@ export async function saveVoucher(input: SaveVoucherInput) {
         }
       }
 
-      audit(user.business_id, user.id, "create", "voucher", voucherId, null, {
+      await audit(user.business_id, user.id, "create", "voucher", voucherId, null, {
         number,
         total: totals.grandTotal,
       });
@@ -399,8 +392,8 @@ export async function cancelVoucher(voucherId: number, reason: string) {
     return { ok: false as const, error: "Only the owner can cancel a bill." };
 
   try {
-    tx(() => {
-      const v = get<{
+    await tx(async () => {
+      const v = await get<{
         id: number;
         number: string;
         type: string;
@@ -416,7 +409,7 @@ export async function cancelVoucher(voucherId: number, reason: string) {
       if (!v) throw new Error("Bill not found.");
       if (v.status === "cancelled") throw new Error("Already cancelled.");
 
-      run(
+      await run(
         "UPDATE voucher SET status = 'cancelled', cancel_reason = ? WHERE id = ?",
         reason || null,
         voucherId,
@@ -426,7 +419,7 @@ export async function cancelVoucher(voucherId: number, reason: string) {
       // we never delete the originals.
       const isSale = v.type === "sales_invoice";
       if (v.type !== "estimate") {
-        run(
+        await run(
           `INSERT INTO party_ledger (business_id, party_id, date, source_type, source_id, narration, debit, credit)
            VALUES (?,?,?,?,?,?,?,?)`,
           user.business_id,
@@ -439,7 +432,7 @@ export async function cancelVoucher(voucherId: number, reason: string) {
           isSale ? v.grand_total : 0,
         );
 
-        const lines = all<{
+        const lines = await all<{
           item_id: number | null;
           qty: number;
           rate: number;
@@ -449,12 +442,12 @@ export async function cancelVoucher(voucherId: number, reason: string) {
         );
         for (const l of lines) {
           if (!l.item_id) continue;
-          const item = get<{ is_service: number }>(
+          const item = await get<{ is_service: number }>(
             "SELECT is_service FROM item WHERE id = ?",
             l.item_id,
           );
           if (item?.is_service) continue;
-          run(
+          await run(
             `INSERT INTO stock_ledger (business_id, item_id, date, source_type, source_id, narration, qty_in, qty_out, rate)
              VALUES (?,?,?,?,?,?,?,?,?)`,
             user.business_id,
@@ -469,7 +462,7 @@ export async function cancelVoucher(voucherId: number, reason: string) {
           );
         }
       }
-      audit(
+      await audit(
         user.business_id,
         user.id,
         "cancel",
@@ -514,29 +507,26 @@ export async function saveParty(formData: FormData) {
   ];
 
   if (id) {
-    run(
+    await run(
       `UPDATE party SET name=?, type=?, phone=?, email=?, gstin=?, billing_address=?,
          shipping_address=?, state_code=? WHERE id=? AND business_id=?`,
       ...fields,
       id,
       user.business_id,
     );
-    audit(user.business_id, user.id, "update", "party", id, null, { name });
+    await audit(user.business_id, user.id, "update", "party", id, null, { name });
   } else {
-    run(
+    const newId = (await run(
       `INSERT INTO party (business_id, name, type, phone, email, gstin, billing_address,
          shipping_address, state_code, opening_balance)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       user.business_id,
       ...fields,
       toPaise(f("opening_balance") || "0"),
-    );
-    const newId = Number(
-      get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id,
-    );
+    )).lastInsertRowid;
     const ob = toPaise(f("opening_balance") || "0");
     if (ob !== 0) {
-      run(
+      await run(
         `INSERT INTO party_ledger (business_id, party_id, date, source_type, source_id, narration, debit, credit)
          VALUES (?,?,?,?,?,?,0,0)`,
         user.business_id,
@@ -547,7 +537,7 @@ export async function saveParty(formData: FormData) {
         "Opening balance",
       );
     }
-    audit(user.business_id, user.id, "create", "party", newId, null, { name });
+    await audit(user.business_id, user.id, "create", "party", newId, null, { name });
   }
   revalidatePath("/parties");
   return { ok: true as const };
@@ -563,17 +553,14 @@ export async function quickAddParty(
   const user = await requireUser();
   if (!name.trim()) return { ok: false as const, error: "Name is required." };
   if (!stateName(stateCode)) return { ok: false as const, error: "Choose a valid state." };
-  run(
+  const id = (await run(
     "INSERT INTO party (business_id, name, type, phone, state_code) VALUES (?,?,?,?,?)",
     user.business_id,
     name.trim(),
     type === "supplier" ? "supplier" : "customer",
     phone.trim() || null,
     stateCode || null,
-  );
-  const id = Number(
-    get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id,
-  );
+  )).lastInsertRowid;
   revalidatePath("/parties");
   return { ok: true as const, id, name: name.trim() };
 }
@@ -610,7 +597,7 @@ export async function saveItem(formData: FormData) {
 
   try {
     if (id) {
-      run(
+      await run(
         `UPDATE item SET name=?, sku=?, brand=?, category=?, hsn_sac=?, unit=?,
            sale_price=?, purchase_price=?, mrp=?, dealer_price=?,
            gst_rate_bp=?, is_service=?, low_stock_level=? WHERE id=? AND business_id=?`,
@@ -618,9 +605,9 @@ export async function saveItem(formData: FormData) {
         id,
         user.business_id,
       );
-      audit(user.business_id, user.id, "update", "item", id, null, { name });
+      await audit(user.business_id, user.id, "update", "item", id, null, { name });
     } else {
-      run(
+      await run(
         `INSERT INTO item (business_id, name, sku, brand, category, hsn_sac, unit,
            sale_price, purchase_price, mrp, dealer_price,
            gst_rate_bp, is_service, low_stock_level, opening_stock)
@@ -629,7 +616,7 @@ export async function saveItem(formData: FormData) {
         ...vals,
         toQty(f("opening_stock") || "0"),
       );
-      audit(user.business_id, user.id, "create", "item", null, null, { name });
+      await audit(user.business_id, user.id, "create", "item", null, null, { name });
     }
   } catch {
     return {
@@ -775,7 +762,7 @@ export async function importItems(input: {
   let created = 0;
   let updated = 0;
 
-  const apply = () => {
+  const apply = async () => {
     for (let i = 1; i < lines.length; i++) {
       const cells = csvSplit(lines[i]);
       const row: Record<string, string> = {};
@@ -834,7 +821,7 @@ export async function importItems(input: {
       const category = (row.category || "").trim();
 
       const existing = sku
-        ? get<{ id: number }>(
+        ? await get<{ id: number }>(
             "SELECT id FROM item WHERE business_id = ? AND IFNULL(brand,'') = ? AND sku = ?",
             user.business_id,
             brand,
@@ -855,7 +842,7 @@ export async function importItems(input: {
 
       try {
         if (existing) {
-          run(
+          await run(
             `UPDATE item SET name=?, brand=?, category=?, hsn_sac=?, unit=?,
                sale_price=?, purchase_price=?, mrp=?, dealer_price=?, gst_rate_bp=?, is_service=?
              WHERE id=?`,
@@ -875,7 +862,7 @@ export async function importItems(input: {
           updated++;
           results.push({ line: i + 1, sku, name, action: "update" });
         } else {
-          run(
+          await run(
             `INSERT INTO item (business_id, name, sku, brand, category, hsn_sac, unit,
                sale_price, purchase_price, mrp, dealer_price, gst_rate_bp, is_service,
                opening_stock, low_stock_level)
@@ -912,8 +899,8 @@ export async function importItems(input: {
   };
 
   try {
-    if (input.dryRun) apply();
-    else tx(apply);
+    if (input.dryRun) await apply();
+    else await tx(apply);
   } catch (e) {
     return {
       ok: false as const,
@@ -923,7 +910,7 @@ export async function importItems(input: {
   }
 
   if (!input.dryRun) {
-    audit(user.business_id, user.id, "import", "item", null, null, {
+    await audit(user.business_id, user.id, "import", "item", null, null, {
       created,
       updated,
     });
@@ -945,8 +932,8 @@ export async function adjustStock(formData: FormData) {
   }
 
   try {
-    const newStock = tx(() => {
-      const item = get<{
+    const newStock = await tx(async () => {
+      const item = await get<{
         id: number;
         name: string;
         is_service: number;
@@ -966,7 +953,7 @@ export async function adjustStock(formData: FormData) {
       if (nextStock < 0)
         throw new Error("You cannot reduce stock below zero.");
 
-      run(
+      await run(
         `INSERT INTO stock_ledger (business_id, item_id, date, source_type, source_id, narration, qty_in, qty_out, rate)
          VALUES (?,?,?,?,?,?,?,?,?)`,
         user.business_id,
@@ -1004,7 +991,7 @@ export async function savePayment(formData: FormData) {
   if (!partyId) return { ok: false as const, error: "Select a party." };
   if (amount <= 0) return { ok: false as const, error: "Enter an amount." };
 
-  const party = get<{ id: number; name: string }>(
+  const party = await get<{ id: number; name: string }>(
     "SELECT id, name FROM party WHERE id = ? AND business_id = ?",
     partyId,
     user.business_id,
@@ -1012,16 +999,16 @@ export async function savePayment(formData: FormData) {
   if (!party) return { ok: false as const, error: "Party not found." };
 
   try {
-    tx(() => {
+    await tx(async () => {
       const fy = financialYear(date);
-      const number = nextNumber(
+      const number = await nextNumber(
         user.business_id,
         type === "in" ? "receipt" : "payment",
         fy,
         (type === "in" ? "RCP/" : "PAY/") + fy.slice(2) + "/",
       );
 
-      run(
+      const paymentId = (await run(
         `INSERT INTO payment (business_id, type, number, date, party_id, party_name, mode, amount, reference, notes, created_by)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         user.business_id,
@@ -1035,14 +1022,11 @@ export async function savePayment(formData: FormData) {
         f("reference") || null,
         f("notes") || null,
         user.id,
-      );
-      const paymentId = Number(
-        get<{ id: number }>("SELECT last_insert_rowid() AS id")!.id,
-      );
+      )).lastInsertRowid;
 
       // Settle the oldest open bills first, which is what a shop actually does.
       let left = amount;
-      const open = all<{ id: number; due: number }>(
+      const open = await all<{ id: number; due: number }>(
         `SELECT * FROM (
            SELECT v.id, v.grand_total - COALESCE((SELECT SUM(a.amount) FROM payment_allocation a
                JOIN payment p ON p.id = a.payment_id WHERE a.voucher_id = v.id AND p.status='final'),0) AS due
@@ -1056,7 +1040,7 @@ export async function savePayment(formData: FormData) {
       for (const bill of open) {
         if (left <= 0) break;
         const alloc = Math.min(left, bill.due);
-        run(
+        await run(
           "INSERT INTO payment_allocation (payment_id, voucher_id, amount) VALUES (?,?,?)",
           paymentId,
           bill.id,
@@ -1065,7 +1049,7 @@ export async function savePayment(formData: FormData) {
         left -= alloc;
       }
 
-      run(
+      await run(
         `INSERT INTO party_ledger (business_id, party_id, date, source_type, source_id, narration, debit, credit)
          VALUES (?,?,?,?,?,?,?,?)`,
         user.business_id,
@@ -1077,7 +1061,7 @@ export async function savePayment(formData: FormData) {
         type === "in" ? 0 : amount,
         type === "in" ? amount : 0,
       );
-      audit(user.business_id, user.id, "create", "payment", paymentId, null, {
+      await audit(user.business_id, user.id, "create", "payment", paymentId, null, {
         number,
         amount,
       });
@@ -1103,7 +1087,7 @@ export async function saveBusiness(formData: FormData) {
   const state = stateName(stateCode);
   if (!state) return { ok: false as const, error: "Choose a valid state." };
 
-  run(
+  await run(
     `UPDATE business SET name=?, legal_name=?, gstin=?, address_line1=?, address_line2=?, city=?,
        pincode=?, state=?, state_code=?, phone=?, email=?, bank_name=?, bank_account=?, bank_ifsc=?,
        upi_id=?, terms=?, hsn_digits=?, is_composition=? WHERE id=?`,
@@ -1127,7 +1111,7 @@ export async function saveBusiness(formData: FormData) {
     f("is_composition") === "on" ? 1 : 0,
     user.business_id,
   );
-  audit(
+  await audit(
     user.business_id,
     user.id,
     "update",
@@ -1159,7 +1143,7 @@ export async function saveNumberSeries(formData: FormData) {
       error: "The next document number must fit within 16 characters.",
     };
   }
-  run(
+  await run(
     "UPDATE number_series SET prefix = ?, last_number = ? WHERE id = ? AND business_id = ?",
     prefix,
     last,
@@ -1257,7 +1241,7 @@ export async function saveUser(formData: FormData) {
 
   try {
     if (id) {
-      run(
+      await run(
         "UPDATE app_user SET name=?, phone=?, role=? WHERE id=? AND business_id=?",
         name,
         phone,
@@ -1266,7 +1250,7 @@ export async function saveUser(formData: FormData) {
         user.business_id,
       );
       if (password)
-        run(
+        await run(
           "UPDATE app_user SET password_hash=? WHERE id=? AND business_id=?",
           hashPassword(password),
           id,
@@ -1278,7 +1262,7 @@ export async function saveUser(formData: FormData) {
           ok: false as const,
           error: "Set a password for the new user.",
         };
-      run(
+      await run(
         "INSERT INTO app_user (business_id, name, phone, password_hash, role) VALUES (?,?,?,?,?)",
         user.business_id,
         name,

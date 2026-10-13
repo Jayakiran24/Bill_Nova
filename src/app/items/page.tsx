@@ -30,12 +30,12 @@ export default async function ItemsPage({
   if (!user) redirect("/login");
 
   const sp = await searchParams;
-  const business = getBusiness(user.business_id);
+  const business = await getBusiness(user.business_id);
   const brand = sp.brand || "";
   const cat = sp.cat || "";
-  const rows = listItems(user.business_id, sp.q || "", brand, cat);
-  const brands = listBrands(user.business_id);
-  const cats = listCategories(user.business_id, brand);
+  const rows = await listItems(user.business_id, sp.q || "", brand, cat);
+  const brands = await listBrands(user.business_id);
+  const cats = await listCategories(user.business_id, brand);
   const isOwner = user.role === "owner";
 
   const stockValue = rows

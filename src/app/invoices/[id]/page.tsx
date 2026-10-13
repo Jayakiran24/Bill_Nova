@@ -28,14 +28,14 @@ export default async function InvoiceViewPage({
 
   const { id } = await params;
   const sp = await searchParams;
-  const v = getVoucher(Number(id), user.business_id);
+  const v = await getVoucher(Number(id), user.business_id);
   if (!v) notFound();
 
-  const business = getBusiness(user.business_id);
-  const lines = voucherLines(v.id, user.business_id);
-  const paid = voucherPaid(v.id, user.business_id);
+  const business = await getBusiness(user.business_id);
+  const lines = await voucherLines(v.id, user.business_id);
+  const paid = await voucherPaid(v.id, user.business_id);
   const due = v.status === "final" ? v.grand_total - paid : 0;
-  const party = v.party_id ? getParty(v.party_id, user.business_id) : undefined;
+  const party = v.party_id ? await getParty(v.party_id, user.business_id) : undefined;
 
   const isComposition = business.is_composition === 1;
   const compositionSale = isComposition && v.type === "sales_invoice";
