@@ -15,6 +15,7 @@ export default async function ReportsPage({
 }) {
   const user = await currentUser();
   if (!user) redirect('/login');
+  if (user.role !== 'owner') redirect('/');
 
   const sp = await searchParams;
   const business = await getBusiness(user.business_id);

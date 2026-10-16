@@ -13,6 +13,7 @@ export default async function Home() {
 
   const business = await getBusiness(user.business_id);
   const d = await dashboard(user.business_id);
+  const isOwner = user.role === 'owner';
   const low = (await lowStockItems(user.business_id)).slice(0, 5);
 
   return (
@@ -30,31 +31,41 @@ export default async function Home() {
           <div className="value">{formatMoney(d.todaySales.n)}</div>
           <div className="sub">{d.todaySales.c} bill{d.todaySales.c === 1 ? '' : 's'}</div>
         </div>
+        {isOwner && (
         <div className="stat ok">
           <div className="label">Collected today</div>
           <div className="value">{formatMoney(d.todayCollected)}</div>
           <div className="sub">cash, UPI and bank</div>
         </div>
+        )}
+        {isOwner && (
         <div className="stat danger">
           <div className="label">To receive</div>
           <div className="value">{formatMoney(d.receivable)}</div>
           <div className="sub">from all customers</div>
         </div>
+        )}
+        {isOwner && (
         <div className="stat">
           <div className="label">To pay</div>
           <div className="value">{formatMoney(d.payable)}</div>
           <div className="sub">to all suppliers</div>
         </div>
+        )}
+        {isOwner && (
         <div className="stat">
           <div className="label">This month</div>
           <div className="value">{formatMoney(d.monthSales.n)}</div>
           <div className="sub">{d.monthSales.c} bills</div>
         </div>
+        )}
+        {isOwner && (
         <div className="stat">
           <div className="label">Low stock</div>
           <div className="value">{d.lowStock}</div>
           <div className="sub">items at or below level</div>
         </div>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
@@ -99,6 +110,7 @@ export default async function Home() {
         </div>
       </div>
 
+      {isOwner && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginTop: 16 }}>
         <div className="card" style={{ marginTop: 0 }}>
           <div className="card-head">Who owes the most</div>
@@ -145,6 +157,7 @@ export default async function Home() {
           </div>
         </div>
       </div>
+      )}
     </Shell>
   );
 }

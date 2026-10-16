@@ -16,6 +16,7 @@ export default async function PaymentsPage({
   const sp = await searchParams;
   const user = await currentUser();
   if (!user) redirect('/login');
+  if (user.role !== 'owner') redirect('/');
 
   const business = await getBusiness(user.business_id);
   const rows = await listPayments(user.business_id);

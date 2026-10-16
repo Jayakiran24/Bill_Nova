@@ -54,6 +54,7 @@ function ready(): Promise<void> {
     const p = (async () => {
       const c = client();
       await c.executeMultiple(SCHEMA);
+      await migrate(c);
       await seedIfEmpty(c);
     })();
     p.catch(() => {
@@ -235,6 +236,66 @@ export function verifyPassword(plain: string, stored: string): boolean {
 }
 
 /* ------------------------------------------------------------------ */
+/* Migrations for databases created before email / Google sign-in      */
+/* ------------------------------------------------------------------ */
+
+async function migrate(c: Client) {
+  await c.executeMultiple(`
+    CREATE TABLE IF NOT EXISTS app_flag (name TEXT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS otp_challenge (
+      id           TEXT PRIMARY KEY,
+      purpose      TEXT NOT NULL CHECK (purpose IN ('signup','login','reset')),
+      email        TEXT NOT NULL,
+      user_id      INTEGER,
+      payload      TEXT,
+      code_hash    TEXT NOT NULL,
+      expires_at   TEXT NOT NULL,
+      attempts     INTEGER NOT NULL DEFAULT 0,
+      resends      INTEGER NOT NULL DEFAULT 0,
+      verified_at  TEXT,
+      consumed_at  TEXT,
+      last_sent_at TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_challenge(email, created_at);
+    CREATE TABLE IF NOT EXISTS staff_invite (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER NOT NULL,
+      email       TEXT NOT NULL,
+      name        TEXT,
+      invited_by  INTEGER,
+      created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      accepted_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_invite_email ON staff_invite(email);
+    CREATE TABLE IF NOT EXISTS login_failure (
+      identifier TEXT NOT NULL,
+      at         TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_login_failure ON login_failure(identifier, at);
+  `);
+  // One-time: every product in the demo shop starts with 5 units (low-stock alert at 1).
+  // Bills already made count against it, so an item sold once shows 4.
+  const done = await c.execute("SELECT 1 FROM app_flag WHERE name = 'stock5'");
+  if (!done.rows.length) {
+    await c.execute(`UPDATE item SET opening_stock = 5000, low_stock_level = 1000
+       WHERE business_id = 1 AND is_service = 0 AND opening_stock IN (0, 55000)`);
+    await c.execute("INSERT OR IGNORE INTO app_flag (name) VALUES ('stock5')");
+  }
+
+  const cols = await c.execute("PRAGMA table_info(app_user)");
+  const have = new Set(cols.rows.map((r) => String(r[1])));
+  if (!have.has("email")) await c.execute("ALTER TABLE app_user ADD COLUMN email TEXT");
+  if (!have.has("google_id")) await c.execute("ALTER TABLE app_user ADD COLUMN google_id TEXT");
+  await c.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON app_user(email) WHERE email IS NOT NULL",
+  );
+  await c.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_google ON app_user(google_id) WHERE google_id IS NOT NULL",
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* First-run seed                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -295,7 +356,7 @@ async function seedIfEmpty(c: Client) {
   // GST-EXCLUSIVE (the sheet's MRP and DP divided by 1.18), so an invoice at the
   // sale rate plus 18% GST lands exactly on the printed MRP. The sheet's own
   // figures are kept in mrp and dealer_price for reference on screen.
-  // Opening stock is zero everywhere: the price list says nothing about stock.
+  // Every model starts with 5 units in stock (the price list itself says nothing about stock).
   type SeedItem = {
     name: string;
     sku: string;
@@ -323,8 +384,8 @@ async function seedIfEmpty(c: Client) {
       it.mrp,
       it.dealer_price,
       it.gst_rate_bp,
-      0,
-      0,
+      5_000, // opening stock: 5 units of every model (quantities are in thousandths)
+      1_000, // low-stock alert at 1
       0,
     );
   }

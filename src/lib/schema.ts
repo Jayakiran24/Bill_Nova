@@ -33,10 +33,12 @@ CREATE TABLE IF NOT EXISTS app_user (
   business_id   INTEGER NOT NULL REFERENCES business(id),
   name          TEXT NOT NULL,
   phone         TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
+  password_hash TEXT NOT NULL,                 -- '!' for Google-only accounts: never matches
   role          TEXT NOT NULL CHECK (role IN ('owner','staff')),
   is_active     INTEGER NOT NULL DEFAULT 1,
-  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  email         TEXT,                          -- lower-case; unique index is added in migrate()
+  google_id     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS session (

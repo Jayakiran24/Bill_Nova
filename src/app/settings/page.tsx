@@ -2,7 +2,13 @@ import { redirect } from 'next/navigation';
 import Shell from '@/components/Shell';
 import { currentUser, listUsers } from '@/lib/auth';
 import { getBusiness } from '@/lib/queries';
-import { saveBusinessForm, saveNumberSeriesForm, saveUserForm } from '@/lib/actions';
+import {
+  saveBusinessForm,
+  saveNumberSeriesForm,
+  inviteStaffForm,
+  revokeInviteForm,
+  setStaffActiveForm,
+} from '@/lib/actions';
 import Flash from '@/components/Flash';
 import { all } from '@/lib/db';
 import { STATE_CODES } from '@/lib/gst';
@@ -25,6 +31,10 @@ export default async function SettingsPage({
     user.business_id,
   );
   const users = await listUsers(user.business_id);
+  const invites = await all<{ id: number; email: string; name: string | null }>(
+    'SELECT id, email, name FROM staff_invite WHERE business_id = ? AND accepted_at IS NULL ORDER BY id DESC',
+    user.business_id,
+  );
 
   if (!isOwner) {
     return (
@@ -130,37 +140,59 @@ export default async function SettingsPage({
       </div>
 
       <div className="card">
-        <div className="card-head">Users</div>
+        <div className="card-head">Staff &amp; access</div>
         <div className="card-body">
+          <p className="dim" style={{ marginTop: 0, fontSize: 14 }}>
+            Owners can do everything. Staff can only create and print bills (no items, stock, purchases,
+            payments, reports or settings). Add a staff member&rsquo;s email below; they then choose
+            &ldquo;Staff&rdquo; on the sign-up page and verify that email with a code.
+          </p>
           <div className="table-wrap" style={{ marginBottom: 14 }}>
             <table className="data">
-              <thead><tr><th>Name</th><th>Phone</th><th>Role</th></tr></thead>
+              <thead><tr><th>Name</th><th>Email / phone</th><th>Role</th><th></th></tr></thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id}>
                     <td>{u.name}</td>
-                    <td className="mono">{u.phone}</td>
-                    <td><span className="badge draft">{u.role}</span></td>
+                    <td className="mono">{u.email || u.phone}</td>
+                    <td>
+                      <span className="badge draft">{u.role}</span>
+                      {!u.is_active && <span className="badge cancelled" style={{ marginLeft: 6 }}>removed</span>}
+                    </td>
+                    <td>
+                      {u.role === 'staff' && (
+                        <form action={setStaffActiveForm}>
+                          <input type="hidden" name="id" value={u.id} />
+                          <input type="hidden" name="active" value={u.is_active ? '0' : '1'} />
+                          <button className="btn sm" type="submit">{u.is_active ? 'Remove access' : 'Restore access'}</button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {invites.map((i) => (
+                  <tr key={'i' + i.id}>
+                    <td>{i.name || '—'}</td>
+                    <td className="mono">{i.email}</td>
+                    <td><span className="badge draft">staff · invited</span></td>
+                    <td>
+                      <form action={revokeInviteForm}>
+                        <input type="hidden" name="id" value={i.id} />
+                        <button className="btn sm" type="submit">Cancel invite</button>
+                      </form>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <form action={saveUserForm}>
-            <div className="grid3">
-              <label className="field"><span>Name</span><input name="name" required /></label>
-              <label className="field"><span>Phone</span><input name="phone" inputMode="numeric" required /></label>
-              <label className="field">
-                <span>Role</span>
-                <select name="role">
-                  <option value="staff">Counter staff</option>
-                  <option value="owner">Owner</option>
-                </select>
-              </label>
-              <label className="field"><span>Password</span><input name="password" type="password" required /></label>
+          <form action={inviteStaffForm}>
+            <div className="grid2">
+              <label className="field"><span>Staff name (optional)</span><input name="name" /></label>
+              <label className="field"><span>Staff email</span><input name="email" type="email" required /></label>
             </div>
-            <button className="btn primary" type="submit">Add user</button>
+            <button className="btn primary" type="submit">Add staff</button>
           </form>
         </div>
       </div>

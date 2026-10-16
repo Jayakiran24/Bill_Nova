@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams;
   const r = sp.get("r") || "sales";
-  if (r === "stock" && user.role !== "owner")
+  if (user.role !== "owner")
     return new Response("Owner only", { status: 403 });
   const today = todayISO();
   const from = sp.get("from") || today.slice(0, 8) + "01";

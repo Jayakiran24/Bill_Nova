@@ -17,6 +17,7 @@ export default async function InvoicesPage({
 
   const sp = await searchParams;
   const type = sp.type || 'sales_invoice';
+  if (type === 'purchase_bill' && user.role !== 'owner') redirect('/invoices');
   const business = await getBusiness(user.business_id);
   const rows = await listVouchers(user.business_id, type, {
     search: sp.q, unpaidOnly: sp.unpaid === '1',
@@ -25,7 +26,7 @@ export default async function InvoicesPage({
   const tabs = [
     { key: 'sales_invoice', label: 'Invoices' },
     { key: 'estimate', label: 'Estimates' },
-    { key: 'purchase_bill', label: 'Purchases' },
+    ...(user.role === 'owner' ? [{ key: 'purchase_bill', label: 'Purchases' }] : []),
   ];
 
   const total = rows.reduce((a, r) => a + (r.status === 'cancelled' ? 0 : r.grand_total), 0);

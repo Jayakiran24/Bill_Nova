@@ -17,7 +17,25 @@ import {
   destroySession,
   requireUser,
   currentUser,
+  createOwnerAccount,
+  createStaffAccount,
+  pendingInvite,
+  requireOwner,
 } from "./auth";
+import { sendMail } from "./mail";
+import {
+  startChallenge,
+  startFakeChallenge,
+  resendChallenge,
+  checkCode,
+  consumeChallenge,
+  currentChallenge,
+  clearChallengeCookie,
+  parsePayload,
+  loginLocked,
+  recordLoginFailure,
+  clearLoginFailures,
+} from "./otp";
 import {
   computeLine,
   computeTotals,
@@ -67,24 +85,176 @@ const PREFIX: Record<string, string> = {
 /* Auth                                                                */
 /* ------------------------------------------------------------------ */
 
-export async function loginAction(_prev: unknown, formData: FormData) {
-  const phone = String(formData.get("phone") || "").trim();
-  const password = String(formData.get("password") || "");
-  if (!phone || !password) return { error: "Enter phone number and password." };
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  const user = await get<{ id: number; password_hash: string; is_active: number }>(
-    "SELECT id, password_hash, is_active FROM app_user WHERE phone = ?",
-    phone,
+const asRole = (v: FormDataEntryValue | null): "owner" | "staff" | null =>
+  v === "owner" || v === "staff" ? v : null;
+
+const NO_INVITE =
+  "No staff invitation found for this email. Ask the shop owner to add you under Settings → Staff, then sign up with the same email.";
+
+export async function loginAction(_prev: unknown, formData: FormData) {
+  const id = String(formData.get("identifier") || "").trim();
+  const password = String(formData.get("password") || "");
+  const keep = { identifier: id };
+  if (!id || !password) return { ...keep, error: "Enter your email (or phone) and password." };
+  if (await loginLocked(id))
+    return { ...keep, error: "Too many failed attempts. Try again in 15 minutes or reset your password." };
+
+  const user = await get<{
+    id: number;
+    password_hash: string;
+    is_active: number;
+    email: string | null;
+    role: string;
+  }>(
+    "SELECT id, password_hash, is_active, email, role FROM app_user WHERE email = ? OR phone = ?",
+    id.toLowerCase(),
+    id,
   );
-  if (
-    !user ||
-    !user.is_active ||
-    !verifyPassword(password, user.password_hash)
-  ) {
-    return { error: "Wrong phone number or password." };
+  if (user && user.password_hash === "!")
+    return { ...keep, error: "This account uses Google. Click “Continue with Google”." };
+  if (!user || !user.is_active || !verifyPassword(password, user.password_hash)) {
+    await recordLoginFailure(id);
+    return { ...keep, error: "Wrong email/phone or password." };
+  }
+  await clearLoginFailures(id);
+  // Password was right: now prove it's really them with a code sent to their email.
+  // (Legacy accounts with no email on file can only use the password.)
+  if (user.email) {
+    const r = await startChallenge({ purpose: "login", email: user.email, userId: user.id });
+    if (r.error) return { ...keep, error: r.error };
+    redirect("/verify");
   }
   await createSession(user.id);
   redirect("/");
+}
+
+export async function signupAction(_prev: unknown, formData: FormData) {
+  const name = String(formData.get("name") || "").trim();
+  const businessName = String(formData.get("business") || "").trim();
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  const password = String(formData.get("password") || "");
+  const role = asRole(formData.get("role"));
+  const keep = { name, business: businessName, email };
+
+  if (!role) return { ...keep, error: "Choose whether you are an Owner or Staff." };
+  if (!name || (role === "owner" && !businessName))
+    return { ...keep, error: role === "owner" ? "Enter your name and business name." : "Enter your name." };
+  if (!EMAIL_RE.test(email)) return { ...keep, error: "Enter a valid email address." };
+  if (password.length < 8) return { ...keep, error: "Password must be at least 8 characters." };
+  if (password !== String(formData.get("confirm") || ""))
+    return { ...keep, error: "Passwords do not match." };
+  if (await get("SELECT 1 FROM app_user WHERE email = ?", email))
+    return { ...keep, error: "That email is already registered. Sign in instead." };
+
+  // Staff can only join a shop whose owner invited this email.
+  if (role === "staff" && !(await pendingInvite(email))) return { ...keep, error: NO_INVITE };
+
+  // Nothing is created yet: the account only exists once the email code is confirmed.
+  const r = await startChallenge({
+    purpose: "signup",
+    email,
+    payload: { role, name, businessName, passwordHash: hashPassword(password) },
+  });
+  if (r.error) return { ...keep, error: r.error };
+  redirect("/verify");
+}
+
+export async function verifyOtpAction(_prev: unknown, formData: FormData) {
+  const res = await checkCode(String(formData.get("code") || ""));
+  if (res.error || !res.challenge) return { error: res.error ?? "Verification failed." };
+  const c = res.challenge;
+
+  if (c.purpose === "reset") redirect("/reset-password");
+
+  if (!(await consumeChallenge(c.id))) return { error: "This code was already used. Start again." };
+
+  if (c.purpose === "login") {
+    const user = await get<{ id: number; is_active: number }>(
+      "SELECT id, is_active FROM app_user WHERE id = ? AND email = ?",
+      c.user_id,
+      c.email,
+    );
+    if (!user || !user.is_active) return { error: "This account is unavailable." };
+    await createSession(user.id);
+    redirect("/");
+  }
+
+  // signup
+  const p = parsePayload<{ role?: string; name: string; businessName: string; passwordHash: string }>(c);
+  if (!p) return { error: "Sign-up expired. Please start again." };
+  try {
+    const userId =
+      p.role === "staff"
+        ? await createStaffAccount({ name: p.name, email: c.email, passwordHash: p.passwordHash })
+        : await createOwnerAccount({
+            name: p.name,
+            businessName: p.businessName,
+            email: c.email,
+            passwordHash: p.passwordHash,
+          });
+    await createSession(userId);
+  } catch (e) {
+    if (e instanceof Error && e.message === "NO_INVITE")
+      redirect("/signup?role=staff&error=" + encodeURIComponent(NO_INVITE));
+    redirect("/login?error=" + encodeURIComponent("That email is already registered. Sign in instead."));
+  }
+  redirect("/");
+}
+
+export async function resendOtpAction() {
+  const r = await resendChallenge();
+  return r.error ? { error: r.error } : { ok: "A new code has been sent." };
+}
+
+export async function cancelOtpAction() {
+  await clearChallengeCookie();
+  redirect("/login");
+}
+
+export async function forgotPasswordAction(_prev: unknown, formData: FormData) {
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return { email, error: "Enter a valid email address." };
+
+  const user = await get<{ id: number; password_hash: string; is_active: number }>(
+    "SELECT id, password_hash, is_active FROM app_user WHERE email = ?",
+    email,
+  );
+  // Same response whether or not the account exists, so this can't be used to probe emails.
+  if (user && user.is_active) {
+    const r = await startChallenge({ purpose: "reset", email, userId: user.id });
+    if (r.error) return { email, error: r.error };
+  } else {
+    await clearChallengeCookie();
+    // No real code exists for this address; /verify will simply reject any input.
+    await startFakeChallenge(email);
+  }
+  redirect("/verify");
+}
+
+export async function resetPasswordAction(_prev: unknown, formData: FormData) {
+  const c = await currentChallenge();
+  if (!c || c.purpose !== "reset" || !c.verified_at || !c.user_id)
+    redirect("/forgot-password");
+  const password = String(formData.get("password") || "");
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  if (password !== String(formData.get("confirm") || ""))
+    return { error: "Passwords do not match." };
+  if (!(await consumeChallenge(c.id))) redirect("/forgot-password");
+
+  await tx(async () => {
+    await run(
+      "UPDATE app_user SET password_hash = ? WHERE id = ? AND email = ?",
+      hashPassword(password),
+      c.user_id,
+      c.email,
+    );
+    // Reset logs out every device.
+    await run("DELETE FROM session WHERE user_id = ?", c.user_id);
+  });
+  await clearLoginFailures(c.email);
+  redirect("/login?reset=1&email=" + encodeURIComponent(c.email));
 }
 
 export async function logoutAction() {
@@ -106,6 +276,8 @@ export async function saveVoucher(input: SaveVoucherInput) {
   if (!["sales_invoice", "estimate", "purchase_bill"].includes(input.type)) {
     return { ok: false as const, error: "Unsupported document type." };
   }
+  if (input.type === "purchase_bill" && user.role !== "owner")
+    return { ok: false as const, error: "Only the owner can enter purchase bills." };
 
   const business = await getBusiness(user.business_id);
 
@@ -921,6 +1093,8 @@ export async function importItems(input: {
 
 export async function adjustStock(formData: FormData) {
   const user = await requireUser();
+  if (user.role !== "owner")
+    return { ok: false as const, error: "Only the owner can adjust stock." };
   const itemId = Number(formData.get("item_id") || 0);
   const deltaQty = Number(formData.get("delta_qty") || 0);
   const direction = String(formData.get("direction") || "add").trim();
@@ -981,6 +1155,8 @@ export async function adjustStock(formData: FormData) {
 
 export async function savePayment(formData: FormData) {
   const user = await requireUser();
+  if (user.role !== "owner")
+    return { ok: false as const, error: "Only the owner can record payments." };
   const f = (k: string) => String(formData.get(k) || "").trim();
 
   const partyId = Number(f("party_id") || 0);
@@ -1279,4 +1455,64 @@ export async function saveUser(formData: FormData) {
   }
   revalidatePath("/settings");
   return { ok: true as const };
+}
+
+/* ------------------------------------------------------------------ */
+/* Staff management (owner only)                                       */
+/* ------------------------------------------------------------------ */
+
+export async function inviteStaffForm(formData: FormData): Promise<void> {
+  const owner = await requireOwner();
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  const name = String(formData.get("name") || "").trim();
+  if (!EMAIL_RE.test(email)) finish("/settings", { ok: false, error: "Enter a valid staff email." }, "");
+  if (await get("SELECT 1 FROM app_user WHERE email = ?", email))
+    finish("/settings", { ok: false, error: "That email already has an account." }, "");
+  if (await get("SELECT 1 FROM staff_invite WHERE email = ? AND accepted_at IS NULL", email))
+    finish("/settings", { ok: false, error: "That email is already invited." }, "");
+
+  await run(
+    "INSERT INTO staff_invite (business_id, email, name, invited_by) VALUES (?,?,?,?)",
+    owner.business_id,
+    email,
+    name || null,
+    owner.id,
+  );
+  const base = process.env.APP_URL || "";
+  try {
+    await sendMail(
+      email,
+      "You have been invited to Bill Nova",
+      `${owner.name} added you as staff. Create your account as "Staff" with this email: ${base}/signup?role=staff`,
+      `<p><b>${owner.name.replace(/</g, "&lt;")}</b> added you as staff on Bill Nova.</p><p>Open <a href="${base}/signup?role=staff">the sign-up page</a>, choose <b>Staff</b> and sign up with this email address.</p>`,
+    );
+  } catch (e) {
+    console.error("Invite email failed", e);
+  }
+  revalidatePath("/settings");
+  finish("/settings", { ok: true }, "Staff invited. They can now sign up as Staff with that email.");
+}
+
+export async function revokeInviteForm(formData: FormData): Promise<void> {
+  const owner = await requireOwner();
+  await run(
+    "DELETE FROM staff_invite WHERE id = ? AND business_id = ? AND accepted_at IS NULL",
+    Number(formData.get("id") || 0),
+    owner.business_id,
+  );
+  finish("/settings", { ok: true }, "Invitation removed.");
+}
+
+export async function setStaffActiveForm(formData: FormData): Promise<void> {
+  const owner = await requireOwner();
+  const id = Number(formData.get("id") || 0);
+  const active = formData.get("active") === "1" ? 1 : 0;
+  const r = await run(
+    "UPDATE app_user SET is_active = ? WHERE id = ? AND business_id = ? AND role = 'staff'",
+    active,
+    id,
+    owner.business_id,
+  );
+  if (!active && r.changes) await run("DELETE FROM session WHERE user_id = ?", id);
+  finish("/settings", { ok: true }, active ? "Staff access restored." : "Staff access removed.");
 }

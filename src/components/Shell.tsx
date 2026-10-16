@@ -25,14 +25,14 @@ export default function Shell({
         <span className="who hide-sm">
           {businessName} · {user.name} ({user.role})
         </span>
-        <Link href="/payments" className="btn sm">Payments</Link>
+        {user.role === 'owner' && <Link href="/payments" className="btn sm">Payments</Link>}
         {user.role === 'owner' && <Link href="/settings" className="btn sm">Settings</Link>}
         <form action={logoutAction}>
           <button className="btn sm" type="submit">Log out</button>
         </form>
       </header>
       <main className={wide ? 'container wide' : 'container'}>{children}</main>
-      <Nav />
+      <Nav isOwner={user.role === 'owner'} />
     </div>
   );
 }

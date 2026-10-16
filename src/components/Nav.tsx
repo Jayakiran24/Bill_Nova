@@ -11,11 +11,11 @@ const ITEMS = [
   { href: '/reports', label: 'Reports', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
 ];
 
-export default function Nav() {
+export default function Nav({ isOwner }: { isOwner: boolean }) {
   const path = usePathname();
   return (
     <nav className="bottomnav no-print">
-      {ITEMS.map((it) => {
+      {ITEMS.filter((it) => isOwner || it.href !== '/reports').map((it) => {
         const active = it.href === '/' ? path === '/' : path.startsWith(it.href);
         return (
           <Link key={it.href} href={it.href} className={active ? 'active' : ''}>

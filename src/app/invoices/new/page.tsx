@@ -17,6 +17,7 @@ export default async function NewInvoicePage({
   if (!user) redirect("/login");
 
   const sp = await searchParams;
+  if (sp.type === "purchase_bill" && user.role !== "owner") redirect("/invoices/new");
   const type = (
     sp.type === "estimate" || sp.type === "purchase_bill"
       ? sp.type
