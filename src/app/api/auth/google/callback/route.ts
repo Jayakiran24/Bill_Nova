@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { get } from "@/lib/db";
-import { createSession, createOwnerAccount, createStaffAccount, pendingInvite } from "@/lib/auth";
+import { get, run } from "@/lib/db";
+import { startChallenge } from "@/lib/otp";
+import { createOwnerAccount, createStaffAccount, pendingInvite } from "@/lib/auth";
 import { OAUTH_STATE_COOKIE, googleRedirectUri } from "@/lib/google";
 
 export const dynamic = "force-dynamic";
@@ -63,13 +64,16 @@ export async function GET(req: NextRequest) {
 
   let userId: number;
   if (existing) {
-    // Never auto-link Google to a password account that already owns this email.
-    if (existing.google_id !== claims.sub)
-      return fail(req, "That email already has a password account. Sign in with your password.", role);
     if (!existing.is_active) return fail(req, "This account is disabled.", role);
+    // Google has verified this email, so it is safe to attach Google to the existing account.
+    if (!existing.google_id)
+      await run("UPDATE app_user SET google_id = ? WHERE id = ?", claims.sub, existing.id);
+    else if (existing.google_id !== claims.sub)
+      return fail(req, "This email is linked to a different Google account.", role);
     userId = existing.id;
   } else {
-    if (role === "login") return fail(req, "No account found for that Google email. Create an account first.");
+    if (role === "login")
+      return fail(req, "No account found for that Google email. Create an account first.");
     const name = claims.name?.trim() || email.split("@")[0];
     if (role === "staff") {
       if (!(await pendingInvite(email)))
@@ -89,8 +93,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  await createSession(userId);
-  const res = NextResponse.redirect(new URL("/", req.nextUrl.origin));
+  // Second factor: a code emailed to the Google address, same as password sign-in.
+  const r = await startChallenge({ purpose: "login", email, userId });
+  if (r.error) return fail(req, r.error, role);
+  const res = NextResponse.redirect(new URL("/verify", req.nextUrl.origin));
   res.cookies.delete(OAUTH_STATE_COOKIE);
   return res;
 }
